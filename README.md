@@ -40,6 +40,54 @@ Tray > **Open modes** to change which app gets which mode, the default mode, and
 
 The AI prompt mode follows common prompting guidance from Anthropic, OpenAI and Google: outcome first, specific, every point you made kept exactly once, nothing invented, copied errors and code kept word for word.
 
+## Customize the instructions
+
+Everything the AI is told lives in `modes.json` (tray > **Open modes**, or `%USERPROFILE%\.ramble\modes.json`). Edit it in any text editor and save; the next dictation uses it, no restart needed. If the file has a typo, Ramble keeps the old version and shows a warning.
+
+**Change what a mode does:** each mode has a list of `instructions`, one rule per line. Add, remove or reword lines:
+
+```json
+"email": {
+  "label": "Email",
+  "context": ["field", "clipboard"],
+  "instructions": [
+    "Write the email body: a greeting, short paragraphs, one clear ask, and a sign-off.",
+    "Always sound warm but brief.",
+    "Never use exclamation marks."
+  ]
+}
+```
+
+- `label`: the name shown on the status pill.
+- `context`: what the AI may see besides your words: `"field"` (text around your cursor) and `"clipboard"` (text you copied in the last 3 seconds). Use `[]` for neither.
+- `instructions`: the rules. Short, specific lines work best. To show the format you want, add an example as one line: `"<example>\nSpoken: ...\nResult: ...\n</example>"`.
+- `required` (optional): text the reply must contain, e.g. `"Goal:"` in AI prompt mode. If it's missing, Ramble asks the AI once more.
+
+**Add your own mode:** add a new entry under `modes`, e.g. a mode for your team's bug reports:
+
+```json
+"bug": {
+  "label": "Bug report",
+  "context": ["clipboard"],
+  "instructions": [
+    "Turn what they said into a bug report with these labels: Summary, Steps to reproduce, Expected, Actual.",
+    "Put any copied error message under Actual, word for word."
+  ]
+}
+```
+
+It then shows up when you tap Shift while recording, and under tray > Redo last as (after a restart).
+
+**Pick the mode per app:** in `app_rules`, list an app's process name in lowercase under `apps` (find it in Task Manager > Details, e.g. `notion.exe`), or lowercase words from a browser tab's title under `browser_titles`. Rules are checked top to bottom; anything unmatched gets `default_mode`.
+
+```json
+{"mode": "bug", "apps": ["jira.exe"], "browser_titles": ["jira", "linear"]}
+```
+
+**Instructions for every mode:** the rules that apply everywhere (output only the text, never invent facts, remove fillers, keep the speaker's language) are in `OUTPUT_RULES` and `DICTATION_RULES` near the top of `ramble.py`.
+
+**Start over:** delete `modes.json` and restart Ramble to get the defaults back.
+
 ## Settings
 
 Tray > **Open settings**. Most changes apply on the next dictation; hotkeys and the microphone need a restart (tray > Quit, then start again).
