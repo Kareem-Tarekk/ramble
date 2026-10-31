@@ -5,13 +5,16 @@ to finish. While recording, tap Shift to change the mode (Edit comes first when 
 selected) and press Esc to cancel. Ctrl+Alt+L pastes the last result again.
 
 Groq turns speech into text (Whisper) and rewrites it for the app you're in (an open model),
-both on Groq's free plan. Without Groq, Whisper runs on this PC and the text is only lightly
+both on Groq's free plan. If Groq can't be reached, the optional offline mode (Whisper on this
+PC, installed by "Install offline mode.bat") turns speech into text and the text is only lightly
 cleaned.
 """
 
 import collections
 import ctypes
 import ctypes.wintypes as wt
+import importlib
+import importlib.util
 import io
 import json
 import logging
@@ -859,8 +862,32 @@ def wav_bytes(audio):
     return buf.getvalue()
 
 
+AV_REQUIREMENT = "av==19.0.2"  # Opus audio compression, about half of the install size
+
+
+def install_audio_compression():
+    """Fetch the audio compressor in the background on first run, which keeps setup short. Until it arrives,
+    audio is sent as WAV (bigger, same result)."""
+    if importlib.util.find_spec("av") is not None:
+        return
+    log.info("Installing the audio compressor in the background")
+    python = os.path.join(os.path.dirname(sys.executable), "python.exe")  # pythonw has no console to print to
+    try:
+        subprocess.run(
+            [python if os.path.exists(python) else sys.executable, "-m", "pip", "install",
+             "--disable-pip-version-check", "-q", AV_REQUIREMENT],
+            capture_output=True, timeout=900, check=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        importlib.invalidate_caches()  # so the running app can import it right away
+        log.info("Audio compressor installed")
+    except Exception:
+        log.warning("Couldn't install the audio compressor; audio is sent uncompressed", exc_info=True)
+
+
 def encode_audio(audio):
     """Opus in Ogg: about a tenth the size of WAV, so it uploads fast. Falls back to WAV."""
+    if importlib.util.find_spec("av") is None:
+        return "speech.wav", wav_bytes(audio)
     try:
         import av
 
@@ -881,8 +908,12 @@ def encode_audio(audio):
         return "speech.wav", wav_bytes(audio)
 
 
+class OfflineUnavailable(Exception):
+    """Groq failed and Whisper on this PC isn't installed."""
+
+
 class SpeechToText:
-    """Groq's Whisper, with Whisper on this PC as the fallback (loaded only when first needed)."""
+    """Groq's Whisper, with Whisper on this PC as an optional fallback (installed separately, loaded when first needed)."""
 
     def __init__(self):
         self._local = None
@@ -909,7 +940,13 @@ class SpeechToText:
         with self._lock:
             if self._local is None:
                 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-                from faster_whisper import WhisperModel
+                try:  # optional: installed by "Install offline mode.bat"
+                    from faster_whisper import WhisperModel
+                except ImportError:
+                    raise OfflineUnavailable(
+                        "Can't reach Groq, and offline speech isn't installed. "
+                        "Run Install offline mode.bat once (needs internet)."
+                    ) from None
 
                 name = settings["local_whisper_model"]
                 options = dict(device="cpu", compute_type="int8", cpu_threads=WHISPER_THREADS)
@@ -1360,6 +1397,7 @@ class App:
     def run(self):
         make_sounds()
         threading.Thread(target=self.uia.client, daemon=True).start()  # prepare UI Automation early
+        threading.Thread(target=install_audio_compression, daemon=True).start()
         self.root = tk.Tk()
         self.root.withdraw()
         self.overlay = Overlay(self.root)
@@ -1686,7 +1724,11 @@ class App:
             return
         client = self.groq_client()
         t0 = time.monotonic()
-        raw, engine = self.stt.transcribe(job.audio, client, self.settings)
+        try:
+            raw, engine = self.stt.transcribe(job.audio, client, self.settings)
+        except OfflineUnavailable as e:
+            self.toast(str(e), "warn", 8)
+            return
         t1 = time.monotonic()
         if not raw:
             self.toast("Didn't catch that. Try again a little louder.", "warn", 3)

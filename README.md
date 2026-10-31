@@ -9,7 +9,7 @@ Windows only.
 1. Install [Python 3.13](https://www.python.org/downloads/) (the installer adds the `py` launcher).
 2. Download this repository (Code > Download ZIP, or `git clone`).
 3. Create a free Groq API key: [console.groq.com](https://console.groq.com) > API Keys > Create API Key.
-4. Double-click **Start Ramble.bat**. The first run sets everything up (a few minutes), then asks for your Groq key. A purple mic appears in the tray next to the clock (click the **^** arrow if it's hidden).
+4. Double-click **Start Ramble.bat**. The first run sets everything up (a one-time download of about 30 MB; Ramble fetches a 27 MB audio compressor by itself in the background right after, which only makes uploads faster), then asks for your Groq key. A purple mic appears in the tray next to the clock (click the **^** arrow if it's hidden).
 
 ## Use it
 
@@ -113,7 +113,7 @@ Tray > **Open settings**. Most changes apply on the next dictation; hotkeys and 
 
 ## When something goes wrong
 
-- **No internet or Groq's limit is used up:** speech is turned into text on your PC (Whisper, downloaded on first use) and lightly cleaned.
+- **No internet, or Groq's limit is used up:** the AI step is skipped and your words are lightly cleaned and pasted. Speech-to-text also needs Groq unless you install **offline mode**: double-click **Install offline mode.bat** once (about 500 MB, mostly the Whisper speech model), and Ramble then transcribes on your PC when Groq can't be reached. Without it, you'll see a message saying so.
 - **No text box selected:** the text is copied. Press Ctrl+V.
 - **Password fields:** Ramble never reads or types into them.
 - **Want the last result again or in another mode:** tray > Copy last result, or Redo last as. `history.jsonl` keeps the last 50 dictations, including exactly what was sent to the AI.
