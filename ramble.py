@@ -76,9 +76,15 @@ DEFAULT_SETTINGS = {
     "fallback_llm_model": "openai/gpt-oss-20b",  # used when the main model's daily limit is used up
     "daily_token_limit": 200000,  # Groq free plan, per model (console.groq.com > Settings > Limits)
     "daily_request_limit": 1000,
+    "continue_seconds": 5,  # talk again this soon after a paste to add to it (0 = off)
     "dictionary": [],
     "snippets": {},
 }
+
+CODE_NAMES_RULE = (
+    "Write code identifiers as they appear in code (user_id, getUserName). A name you build from spoken words is a "
+    "guess: add \"(confirm name)\" after it."
+)
 
 DEFAULT_MODES = {
     "default_mode": "clean",
@@ -115,39 +121,80 @@ DEFAULT_MODES = {
             # Not "field": text already in the chat box (often the last prompt) got merged into new ones.
             "context": ["clipboard"],
             "required": "Goal:",  # a reply without this is asked for again once
+            "check_details": True,  # names and numbers not in the speech or clipboard are sent back once
             "instructions": [
-                "Turn what they said into a well-structured prompt for an AI assistant (coding, research, writing "
-                "or anything else), written as them, speaking to the AI in short, direct, imperative sentences.",
-                "ALWAYS use this format, with the plain-text labels exactly as shown and \"- \" bullets. Include a "
-                "section only when they said something for it, in this order:",
-                "First line, only if they gave a ticket or issue ID: the ID (\"PROJ-123\").",
-                "Goal: one sentence with the outcome they want. Always present.",
-                "Context: background, the current situation and the reasons they gave.",
-                "Requirements: every specific thing to do or include, one per bullet, in the order they said them, "
-                "with the exact names, values and conditions.",
-                "Constraints: limits, preferences, and anything they said not to do or not to touch.",
-                "Expected output: what they want back (format, length, deliverable), only if they said it.",
-                "Open points: what they were unsure about, contradicted, or left out but the task clearly needs, "
-                "as short statements, not questions.",
-                "Completeness comes first: every point they made appears exactly once, including asides and "
-                "examples. Shorten the wording, never the content.",
-                "Add nothing they didn't say: no invented names, values, IDs, requirements, best practices or "
-                "generic advice.",
+                "Rewrite what they said as a prompt to an AI assistant, in their voice: short, direct, imperative "
+                "sentences.",
+                "Use these plain-text labels, in this order, each starting a new line. Leave out a section they "
+                "gave nothing for:",
+                "(first line, only if they said one) the ticket or issue ID: \"PROJ-123\"",
+                "Goal: one sentence with the outcome they want, on the same line as the label.",
+                "Context: the background, current situation and reasons they gave.",
+                "Requirements: each thing to do or include, in the order they said it, with the exact names, values "
+                "and conditions.",
+                "Constraints: limits, preferences, and what not to do or touch.",
+                "Expected output: the format, length or deliverable they asked for.",
+                "Open points: what they were unsure about or contradicted, and missing information the task clearly "
+                "needs, as statements, not questions.",
+                "Under every label except Goal, write \"- \" bullets, one point each.",
+                "Every point they made appears exactly once, asides and examples included. Shorten the wording, "
+                "never the content.",
                 "Copied text they refer to (an error, log or code) goes verbatim in a fenced code block under "
-                "Context. Never paraphrase it.",
-                "Write code identifiers as they appear in code (user_id, getUserName). A name you build from spoken "
-                "words is a guess: add \"(confirm name)\" after it.",
-                "Never answer the prompt or do the task yourself, and never return the transcript unchanged.",
-                "<example>\nSpoken: \"um PROJ 45, when a user signs up send them a welcome email, because support "
-                "keeps getting asked how to start, oh and don't change the login page, and maybe also a text "
-                "message, not sure\"\nPrompt:\nPROJ-45\nGoal: Send a welcome email to new users when they sign "
-                "up.\nContext:\n- Support keeps getting asked how to get started.\nRequirements:\n- On sign-up, "
-                "send the new user a welcome email.\nConstraints:\n- Don't change the login page.\nOpen "
-                "points:\n- Sending a text message too is undecided.\n</example>",
-                "<example>\nSpoken: \"so I need like a summary of the three articles I'll paste, uh, for my "
-                "manager, keep it under a page, and highlight anything about pricing\"\nPrompt:\nGoal: Summarize "
-                "the three articles I'll paste for my manager.\nRequirements:\n- Highlight anything about "
-                "pricing.\nExpected output:\n- Under one page.\n</example>",
+                "Context.",
+                "If they say \"start over\", write one complete prompt for the whole task and leave the phrase out.",
+                CODE_NAMES_RULE,
+            ],
+            "examples": [
+                "Spoken: \"um PROJ 45, when a user signs up send them a welcome email, because support keeps "
+                "getting asked how to start, oh and don't change the login page, and maybe also a text message, not "
+                "sure\"\nOutput:\nPROJ-45\nGoal: Send a welcome email to new users when they sign up.\nContext:\n- "
+                "Support keeps getting asked how to get started.\nRequirements:\n- On sign-up, send the new user a "
+                "welcome email.\nConstraints:\n- Don't change the login page.\nOpen points:\n- Sending a text "
+                "message too is undecided.",
+                "Spoken: \"so I need like a summary of the three articles I'll paste, uh, for my manager, keep it "
+                "under a page, and highlight anything about pricing\"\nOutput:\nGoal: Summarize the three articles "
+                "I'll paste for my manager.\nRequirements:\n- Highlight anything about pricing.\nExpected output:\n"
+                "- Under one page.",
+            ],
+            # A short request stays a sentence or two; the layout only helps longer ones.
+            "short": {
+                "max_words": 25,
+                "required": "",
+                "instructions": [
+                    "Rewrite what they said as a request to an AI assistant, in their voice: one or two short, "
+                    "direct sentences, with no labels or bullets.",
+                    CODE_NAMES_RULE,
+                ],
+                "examples": [
+                    "Spoken: \"uh can you make the save button like blue instead of grey\"\nOutput:\nMake the save "
+                    "button blue instead of grey.",
+                ],
+            },
+        },
+        "followup": {
+            "label": "Follow-up",
+            # Never Ramble's history or the chat box: the chat may be days old or started without Ramble.
+            "context": ["clipboard"],
+            "check_details": True,
+            "instructions": [
+                "They are replying in a chat where the AI assistant already has the task. Write their follow-up "
+                "message, in their voice.",
+                "Start with the change they want, in one direct sentence.",
+                "Then, only if they said it: why, and what to keep as it is.",
+                "One point per line; a short numbered list only when the order matters. 1 to 5 lines in all.",
+                "No section labels, and don't restate the original task.",
+                "Keep references as they said them (\"that function\", \"the second option\"); don't guess what "
+                "they point to.",
+                "Copied text they refer to (an error, log or code) goes verbatim in a fenced code block after the "
+                "message.",
+                CODE_NAMES_RULE,
+            ],
+            "examples": [
+                "Spoken: \"no that's wrong, um, it should validate before saving not after, because bad rows "
+                "are getting in, and keep the retry logic you did\"\nOutput:\nValidate before saving, not after, "
+                "because bad rows are getting in.\nKeep the retry logic you did.",
+                "Spoken: \"also uh add a test class, and make the error message say which field is missing\"\n"
+                "Output:\nAdd a test class.\nMake the error message say which field is missing.",
             ],
         },
         "email": {
@@ -194,11 +241,11 @@ DEFAULT_MODES = {
 }
 
 OUTPUT_RULES = """\
-You turn a speech-to-text transcript into finished text. Your reply is inserted straight into the app the person is typing in, so reply with only that text: no preamble, no quotes around it, no "Here's your text", no notes or explanations.
-- Keep the speaker's meaning, facts and level of certainty. Never add facts, names, numbers, dates or promises they didn't say.
-- Use the spellings in the dictionary, and fix words the transcription clearly misheard.
+You turn speech into finished text that is pasted straight into the app the person is using. Reply with only that text: no preamble, no quotes around it, no notes.
+- Keep their meaning, facts and level of certainty. Add no names, numbers, dates, requirements or advice they didn't give.
+- Fix words the transcription clearly misheard, and use the dictionary's spellings.
 - {language}
-- Keep placeholders like ⟦1⟧ exactly as they are; they are filled in afterwards."""
+- Keep placeholders like ⟦1⟧ exactly as they are."""
 
 LANGUAGES = {
     "same": ("Same as spoken", "Write in the language they spoke unless they ask for another one."),
@@ -213,13 +260,13 @@ LANGUAGES = {
 }
 
 DICTATION_RULES = """\
-- Remove filler words (um, uh, like, you know, I mean, sort of) that carry no meaning, and drop false starts and repeated words.
-- Fix punctuation, capitalization and grammar.
-- Resolve self-corrections: "meet Tuesday, no wait, Friday" becomes "meet Friday".
-- Spoken formatting: "new line" is a line break, "new paragraph" is a blank line, "bullet point" starts a "- " list item. Don't write those words.
-- If they say how they want it ("as an email", "keep it short", "more formal"), do that and leave the instruction out.
-- They are dictating, not talking to you. If the transcript is a question or a request, write it out as their question or request; never answer it or carry it out.
-- If the field already has text, fit what you write at the cursor: continue its sentence or style, and don't repeat what's there."""
+- They are dictating, not talking to you. Write out their question or request; never answer it or carry it out.
+- Drop fillers (um, uh, like, you know, I mean), false starts and repeats. Fix punctuation, capitals and grammar.
+- Self-corrections keep only the final version: "meet Tuesday, no wait, Friday" becomes "meet Friday".
+- "new line", "new paragraph" and "bullet point" become a line break, a blank line and a "- " item; don't write the words.
+- If they say how they want it ("keep it short", "more formal"), do that and leave the instruction out."""
+
+START_OVER_RE = re.compile(r"\b(start (over|fresh|again)|from scratch)\b", re.IGNORECASE)
 
 SAMPLE_RATE = 16000  # what Whisper expects
 TAP_SECONDS = 0.3  # a shorter press is a tap; a longer one is hold-to-talk
@@ -229,6 +276,9 @@ CONTEXT_CHARS = 1000  # field text kept on each side of the cursor (about 2,000 
 MAX_SELECTION = 20000
 COPIED_WITHIN = 3.0  # copied text counts as context if copied this soon before recording, or during it
 HISTORY_SIZE = 50
+CONTINUE_MIN_SECONDS = 0.6  # a shorter add-on recording is ignored
+MAX_SEGMENTS = 3  # recordings joined into one result at most
+MAX_CHAIN_SECONDS = 90
 WHISPER_THREADS = 4  # on a 14-core laptop, more threads were slower
 
 # Ctrl+C means "stop" in terminals, and code editors copy the whole line when nothing is
@@ -292,7 +342,7 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 ERROR_ALREADY_EXISTS = 183
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
 LLKHF_INJECTED = 0x10
-VK_C, VK_V, VK_ESCAPE = 0x43, 0x56, 0x1B
+VK_C, VK_V, VK_Z, VK_ESCAPE = 0x43, 0x56, 0x5A, 0x1B
 EM_GETSEL, SMTO_ABORTIFHUNG = 0xB0, 0x2
 MODIFIER_VKS = {"ctrl": (0x11,), "alt": (0x12,), "shift": (0x10,), "win": (0x5B, 0x5C)}
 
@@ -707,6 +757,7 @@ PREFIX_RE = re.compile(
     + r")\s*[:,.\-]+\s*",
     re.IGNORECASE,
 )
+FOLLOWUP_RE = re.compile(r"^\s*(?:as an?\s+)?follow[- ]?up\s*[:,.\-]+\s*", re.IGNORECASE)  # "Follow up: ..."
 
 
 def light_clean(text):
@@ -719,11 +770,16 @@ def light_clean(text):
 
 def spoken_mode(transcript):
     """("As an email: hi Sara...") -> ("email", "Hi Sara..."); (None, transcript) when no mode is named."""
-    match = PREFIX_RE.match(transcript)
-    if not match:
-        return None, transcript
+    match = FOLLOWUP_RE.match(transcript)
+    if match:
+        mode = "followup"
+    else:
+        match = PREFIX_RE.match(transcript)
+        if not match:
+            return None, transcript
+        mode = MODE_WORDS[match.group(1).lower()]
     rest = transcript[match.end():]
-    return MODE_WORDS[match.group(1).lower()], rest[:1].upper() + rest[1:]
+    return mode, rest[:1].upper() + rest[1:]
 
 
 def add_placeholders(transcript, snippets):
@@ -919,9 +975,13 @@ class SpeechToText:
         self._local = None
         self._lock = threading.Lock()
 
-    def transcribe(self, audio, client, settings):
-        """Returns (text, engine), where engine is "groq" or "local"."""
-        hint = ", ".join(settings["dictionary"])[:800]  # Whisper's prompt is limited to 224 tokens
+    def transcribe(self, audio, client, settings, previous=""):
+        """Returns (text, engine), where engine is "groq" or "local". previous is what they said just before,
+        when this recording continues it."""
+        # Whisper's prompt is limited to 224 tokens (about 800 characters); it reads it as the text just before.
+        tail = previous[-400:].split(" ", 1)[-1] if len(previous) > 400 else previous
+        hint = ", ".join(settings["dictionary"])[:800 - len(tail)]
+        hint = f"{hint}. {tail}" if hint and tail else hint or tail
         if client is not None:
             try:
                 name, data = encode_audio(audio)
@@ -961,19 +1021,29 @@ class SpeechToText:
             return " ".join(s.text.strip() for s in segments).strip()
 
 
+def mode_for(mode, transcript):
+    """The mode's settings for this transcript: a mode with a "short" variant (AI prompt) uses it for short
+    dictations, unless they asked to start over."""
+    short = mode.get("short")
+    if short and len(transcript.split()) <= short["max_words"] and not START_OVER_RE.search(transcript):
+        return dict(mode, **short)
+    return mode
+
+
 def build_prompt(mode_key, mode, target, transcript, selection="", clipboard="", dictionary=(), language="same"):
-    """The system and user messages for the clean-up call."""
+    """The system and user messages for the clean-up call. Pass the mode through mode_for() first."""
     language_rule = LANGUAGES.get(language, LANGUAGES["same"])[1]
     rules = [OUTPUT_RULES.format(language=language_rule)] + ([] if mode_key == "edit" else [DICTATION_RULES])
     instructions = "\n".join(f"- {line}" for line in mode["instructions"])
-    system = "\n\n".join(rules + [f"Mode: {mode['label']}\n{instructions}"])
+    examples = "".join(f"\n\nExample:\n{example}" for example in mode.get("examples", []))
+    system = "\n\n".join(rules + [f"Mode: {mode['label']}\n{instructions}{examples}"])
 
     wants = mode.get("context", [])
     parts = [f'App: {target.process or "unknown"}, window "{target.title}"']
     if "field" in wants and (target.field.before or target.field.after):
         parts.append(
-            "Text already in the field (⟨CURSOR⟩ marks where your text goes):\n<field>\n"
-            f"{target.field.before}⟨CURSOR⟩{target.field.after}\n</field>"
+            "Text already in the field. ⟨CURSOR⟩ marks where your text goes: continue its sentence and style, and "
+            f"don't repeat what's there.\n<field>\n{target.field.before}⟨CURSOR⟩{target.field.after}\n</field>"
         )
     if "clipboard" in wants and clipboard:
         parts.append(f"Text they copied just before speaking:\n<clipboard>\n{clipboard}\n</clipboard>")
@@ -1012,6 +1082,65 @@ def tidy_prompt(text):
     return "\n\n".join("\n".join(b).strip() for b in kept)
 
 
+NUMBER_WORDS = {"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6",
+                "seven": "7", "eight": "8", "nine": "9", "ten": "10"}
+# Anything with a digit, a path, an identifier (snake_case, camelCase, dotted) or a capitalized word.
+DETAIL_RE = re.compile(r"[\w./\\:-]*\d[\w./\\:-]*|[\w.-]*[/\\][\w./\\-]+|\w+_\w+|[a-z]+[A-Z]\w*|\w+\.\w+|[A-Z][\w'-]+")
+LIST_MARK_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])?\s*")
+
+
+def _squash(text):
+    return re.sub(r"[\W_]+", "", text.lower())
+
+
+def invented_details(text, sources, allowed=""):
+    """Names, numbers, identifiers and paths in the reply that appear nowhere in what they said or copied (nor in
+    the mode's instructions, which can name terms the model may correct a misheard word to). Code blocks
+    are skipped (copied text, checked against the clipboard by the model's instructions), and so are names marked
+    "(confirm ...)" and capitalized words that start a sentence."""
+    said = " ".join(sources)
+    digits = re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", lambda m: NUMBER_WORDS[m.group(1).lower()], said,
+                    flags=re.IGNORECASE)
+    spoken = [_squash(w) for w in re.findall(r"[\w'-]+", f"{said} {allowed}")]
+    words = set(spoken) | {a + b for a, b in zip(spoken, spoken[1:])}  # "open ai" -> OpenAI
+    joined = "\x00".join(_squash(line) for line in (said, digits, allowed))  # "PROJ 1 2 3" holds "proj123"
+
+    def known(item):
+        key = _squash(item)
+        if not key:
+            return True
+        if re.fullmatch(r"[A-Za-z]+(?:['-][A-Za-z]+)*", item) and not item.isupper():
+            # a plain word (or each part of "Python-based") must have been said as a word; acronyms like
+            # LWC may have been spelled out ("L W C")
+            return all(part in words or part.rstrip("s") in words or part + "s" in words
+                       for part in map(_squash, item.split("-")))
+        return key in joined or key.rstrip("s") in joined
+
+    found, in_code = [], False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        line = line.replace("**", "").lstrip("# ")
+        body = line[LIST_MARK_RE.match(line).end():]
+        notes = [m.span() for m in re.finditer(r"\(confirm[^)]*\)", body)]
+        for match in DETAIL_RE.finditer(body):
+            if any(start <= match.start() < end for start, end in notes):
+                continue  # inside "(confirm API name)"
+            item = match.group().strip(".:-/\\'")
+            before = body[:match.start()].rstrip()
+            if not item or (len(item) < 2 and not item.isdigit()) or body[match.end():].lstrip().startswith("(confirm"):
+                continue
+            if item[0].isupper() and not re.search(r"[\d_./\\]", item) and not any(c.isupper() for c in item[1:]):
+                if not before or before.endswith((".", "!", "?", ":", "\"", "(")):
+                    continue  # an ordinary word starting a sentence
+            if not known(item) and item not in found:
+                found.append(item)
+    return found
+
+
 def _call_model(client, settings, model, messages):
     extra = {"reasoning_effort": "low", "include_reasoning": False} if model.startswith("openai/gpt-oss") else {}
     response = client.chat.completions.create(
@@ -1024,9 +1153,10 @@ def _call_model(client, settings, model, messages):
     return text, response.usage.total_tokens if response.usage else 0
 
 
-def rewrite(client, settings, system, user, required="", usage=None):
+def rewrite(client, settings, system, user, required="", usage=None, check=None):
     """The clean-up call. Moves to the fallback model when the main one's daily limit is used up, and asks once
-    more when a reply is empty or lacks the mode's required label. Returns (text, model); raises groq.APIError."""
+    more when a reply is empty or lacks the mode's required label, or when check(reply) lists invented details.
+    Returns (text, model, details still unconfirmed); raises groq.APIError."""
     models = [settings["llm_model"]]
     if settings["fallback_llm_model"] and settings["fallback_llm_model"] != models[0]:
         models.append(settings["fallback_llm_model"])
@@ -1050,7 +1180,22 @@ def rewrite(client, settings, system, user, required="", usage=None):
                     usage.add_call(model, tokens)
             if not text:
                 raise RuntimeError("the model returned no text")
-            return text, model
+            invented = check(text) if check else []
+            if invented:
+                log.info("Reply from %s has details they didn't say (%s); asking again", model, ", ".join(invented))
+                retry = messages + [{"role": "assistant", "content": text}, {
+                    "role": "user",
+                    "content": "These aren't in what they said or copied: " + ", ".join(invented) + ". Rewrite "
+                               "your reply without them, or with what they actually said; a name you built from "
+                               "their words may stay if you mark it the way your instructions say. Reply with only "
+                               "the corrected text.",
+                }]
+                fixed, tokens = _call_model(client, settings, model, retry)
+                if usage is not None:
+                    usage.add_call(model, tokens)
+                if fixed and (not required or required in fixed):
+                    text, invented = fixed, check(fixed)
+            return text, model, invented
         except groq.RateLimitError as e:
             if position == len(models) - 1:
                 raise
@@ -1361,6 +1506,7 @@ class Job:
     mode: str
     auto_mode: str
     started: float
+    continues: dict = None  # the paste this recording adds to (see App.last_insert)
 
 
 class App:
@@ -1390,6 +1536,12 @@ class App:
         self.confirmed = False  # the hold has lasted long enough to show the pill
         self.target = None
         self.mode = self.auto_mode = self.modes["default_mode"]
+        self.continuing = None  # the paste the current recording adds to
+        # The last paste, while talking again can still add to it: where it went, the field's text before and
+        # after it, and what was said. Set by the worker thread, read when recording starts.
+        self.last_insert = None
+        self.last_enter = 0.0  # when Enter was last pressed (a sent chat message can't be added to)
+        self.paste_before = None  # the field's text just before insert()'s last paste
         # Keyboard hook state.
         self.hotkey_down = False
         self.swallowed = set()  # keys whose key-up Ramble must also hide from the app
@@ -1565,6 +1717,8 @@ class App:
 
     def _on_press(self, key, injected):
         now = time.monotonic()
+        if key == keyboard.Key.enter and not injected:
+            self.last_enter = now
         if key == self.hotkey:
             if not self.hotkey_down:  # ignore auto-repeat while held
                 self.hotkey_down = True
@@ -1641,6 +1795,15 @@ class App:
         process, title = window_info(hwnd)
         self.target = Target(hwnd, process, title, self.uia.focused_field())
         self.mode = self.auto_mode = detect_mode(process, title, self.modes)
+        last = self.last_insert
+        if last and hwnd == last["hwnd"] and 0 <= when - last["at"] <= self.settings["continue_seconds"]:
+            if self.last_enter > last["at"]:  # the prompt was sent: what they say now is a follow-up to it
+                if last["mode"] in ("prompt", "followup"):
+                    self.mode = self.auto_mode = "followup"
+            elif (last["segments"] < MAX_SEGMENTS and last["seconds"] < MAX_CHAIN_SECONDS
+                  and self.uia.snapshot(last["target"].field.element) == last["after"]):
+                self.continuing = last  # untouched since the paste: add to it
+                self.mode = self.auto_mode = last["mode"]
 
     def _confirm(self):
         """The press is a real dictation (held, double-tapped or mode-switched): show it."""
@@ -1662,18 +1825,22 @@ class App:
         secs = int(time.monotonic() - self.started)
         action = "Tap" if self.state == "handsfree" else "Release"
         hint = f"{action} {self.key_name} to finish  ·  {self.mode_key_name}: change mode  ·  Esc: cancel"
-        return f"{self.mode_config(self.mode)['label']}   {secs // 60}:{secs % 60:02d}", hint, self.recorder.levels
+        label = self.mode_config(self.mode)["label"]
+        if self.continuing:
+            label = f"Continuing…  {label}"
+        return f"{label}   {secs // 60}:{secs % 60:02d}", hint, self.recorder.levels
 
     def _next_mode(self):
-        """Cycle the mode. Edit comes first when text is selected."""
-        order = [self.auto_mode] + (["edit"] if self.target.field.selection else [])
+        """Cycle the mode. Edit comes first when text is selected; after AI prompt, Follow-up."""
+        order = [self.auto_mode] + (["followup"] if self.auto_mode == "prompt" else [])
+        order += ["edit"] if self.target.field.selection else []
         order += [key for key in self.modes["modes"] if key not in order and key != "edit"]
         position = order.index(self.mode) if self.mode in order else -1
         self.mode = order[(position + 1) % len(order)]
 
     def _finish(self):
         audio = self.recorder.stop()
-        job = Job(audio, self.target, self.mode, self.auto_mode, self.started)
+        job = Job(audio, self.target, self.mode, self.auto_mode, self.started, self.continuing)
         self._reset()
         if self.settings["sounds"]:
             play_sound("stop")
@@ -1690,7 +1857,7 @@ class App:
             self.ui(self.overlay.hide)
 
     def _reset(self):
-        self.state, self.deadline, self.confirmed = "idle", None, False
+        self.state, self.deadline, self.confirmed, self.continuing = "idle", None, False, None
 
     # -- worker thread: speech to text, clean-up, inserting
 
@@ -1713,36 +1880,44 @@ class App:
     def _dictate(self, job):
         self.reload()
         seconds = len(job.audio) / SAMPLE_RATE
-        if seconds < MIN_SECONDS:
-            self.ui(self.overlay.hide)
+        chain = job.continues  # this recording adds to the last paste
+        if seconds < (CONTINUE_MIN_SECONDS if chain else MIN_SECONDS) or (chain and not has_speech(job.audio)):
+            self.ui(self.overlay.hide)  # an accidental press: the last paste stays as it is
             return
         if not has_speech(job.audio):
             self.toast("Didn't hear any speech. Is the mic muted?", "warn", 4)
             return
-        if job.target.field.kind == "password":
+        target = chain["target"] if chain else job.target
+        if target.field.kind == "password":
             self.toast("Ramble doesn't type into password fields.", "warn", 4)
             return
         client = self.groq_client()
         t0 = time.monotonic()
         try:
-            raw, engine = self.stt.transcribe(job.audio, client, self.settings)
+            raw, engine = self.stt.transcribe(job.audio, client, self.settings, chain["raw"] if chain else "")
         except OfflineUnavailable as e:
             self.toast(str(e), "warn", 8)
             return
         t1 = time.monotonic()
         if not raw:
+            if chain:
+                self.ui(self.overlay.hide)
+                return
             self.toast("Didn't catch that. Try again a little louder.", "warn", 3)
             return
+        if chain:
+            raw = f"{chain['raw']} {raw}"  # rewritten as one dictation, so the result reads as a whole
 
         spoken, transcript = spoken_mode(raw)
         mode_key = spoken or job.mode
-        mode = self.mode_config(mode_key)
-        selection = job.target.field.selection
-        clipboard = ""
-        if "clipboard" in mode.get("context", []) and self.clipwatch.last_copy >= job.started - COPIED_WITHIN:
+        selection = target.field.selection
+        clipboard = chain["clipboard"] if chain else ""
+        if "clipboard" in self.mode_config(mode_key).get("context", []) \
+                and self.clipwatch.last_copy >= job.started - COPIED_WITHIN:
             clipboard = (get_clipboard_text() or "")[:4000]
         transcript, snippets = add_placeholders(transcript, self.settings["snippets"])
-        text, prompt, problem, model = direct_output(transcript, snippets), None, "", None
+        mode = mode_for(self.mode_config(mode_key), transcript)
+        text, prompt, problem, model, invented = direct_output(transcript, snippets), None, "", None, []
         if text is None:
             if mode_key == "clean" and len(transcript.split()) < 3:
                 text = light_clean(transcript)  # too short to need AI
@@ -1750,11 +1925,12 @@ class App:
                 problem = "no Groq key"
             else:
                 self.toast(f"Writing {mode['label'].lower()}…", "work", None)
-                system, user = build_prompt(mode_key, mode, job.target, transcript, selection, clipboard,
+                system, user = build_prompt(mode_key, mode, target, transcript, selection, clipboard,
                                             self.settings["dictionary"], self.settings["output_language"])
                 prompt = {"system": system, "user": user}
                 try:
-                    text, model = rewrite(client, self.settings, system, user, mode.get("required", ""), self.usage)
+                    text, model, invented = rewrite(client, self.settings, system, user, mode.get("required", ""),
+                                                    self.usage, self._detail_check(mode, transcript, clipboard))
                     if mode_key == "prompt":
                         text = tidy_prompt(text)
                 except Exception as e:
@@ -1767,17 +1943,29 @@ class App:
                 text = light_clean(transcript)
             text = fill_placeholders(text, snippets)
         if mode_key != "edit" and not selection:
-            text = fit_at_cursor(text, job.target.field.before)
+            text = fit_at_cursor(text, target.field.before)
         t2 = time.monotonic()
 
-        result = self.insert(text, job.target)
-        log.info("%s via %s: %.1fs of speech, speech-to-text %.2fs, clean-up %.2fs, insert %s %.2fs",
-                 mode_key, engine, seconds, t1 - t0, t2 - t1, result, time.monotonic() - t2)
+        result = self._replace_paste(chain, text) if chain else self.insert(text, target)
+        self.last_insert = None
+        if result == "pasted" and mode_key != "edit" and self.settings["continue_seconds"]:
+            after = self.uia.snapshot(target.field.element)
+            if self.paste_before is not None and after is not None:
+                self.last_insert = {
+                    "at": time.monotonic(), "hwnd": target.hwnd, "target": target, "before": self.paste_before,
+                    "after": after, "raw": raw, "mode": mode_key, "clipboard": clipboard,
+                    "segments": chain["segments"] + 1 if chain else 1,
+                    "seconds": (chain["seconds"] if chain else 0) + seconds,
+                }
+        log.info("%s via %s: %.1fs of speech, speech-to-text %.2fs, clean-up %.2fs, insert %s %.2fs%s",
+                 mode_key, engine, seconds, t1 - t0, t2 - t1, result, time.monotonic() - t2,
+                 f" (continues the last paste, part {chain['segments'] + 1})" if chain else "")
         add_history({
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "app": job.target.process, "title": job.target.title,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "app": target.process, "title": target.title,
             "mode": mode_key, "raw": raw, "transcript": transcript, "snippets": snippets, "selection": selection,
-            "field_before": job.target.field.before, "field_after": job.target.field.after, "clipboard": clipboard,
+            "field_before": target.field.before, "field_after": target.field.after, "clipboard": clipboard,
             "prompt": prompt, "output": text, "result": result, "speech_to_text": engine, "model": model,
+            "unconfirmed": invented,
         })
         self.usage.add_dictation(mode_key, seconds, len(text.split()), model, self.settings)
         if self.tray is not None:
@@ -1785,11 +1973,46 @@ class App:
         if self.usage.should_warn(self.settings):
             self.toast(f"80% of today's Groq limit is used. Ramble switches to {self.settings['fallback_llm_model']} "
                        "when it runs out.", "warn", 6)
+        elif invented and result == "pasted":
+            self.toast("Check these, you may not have said them: " + ", ".join(invented[:4]), "warn", 6)
         else:
             self._report(result, problem)
 
+    def _detail_check(self, mode, transcript, clipboard):
+        """The invented-details check for modes that ask for it (not when translating: the words change)."""
+        if not mode.get("check_details") or self.settings["output_language"] != "same":
+            return None
+        sources = [transcript, clipboard, " ".join(self.settings["dictionary"])]
+        allowed = " ".join(mode["instructions"] + [mode["label"]])
+        return lambda text: invented_details(text, sources, allowed)
+
+    def _replace_paste(self, chain, text):
+        """Undo the last paste (Ctrl+Z) and paste text in its place. Only goes ahead when the field is confirmed
+        to be back as it was before that paste; otherwise text goes on the clipboard ("not_replaced")."""
+        target = chain["target"]
+        element = target.field.element
+        if user32.GetForegroundWindow() != target.hwnd and not focus_window(target.hwnd):
+            self._copy(text)
+            return "not_replaced"
+        self.uia.ensure_focus(element)
+        if self.uia.snapshot(element) != chain["after"]:  # changed since: Ctrl+Z would undo something else
+            self._copy(text)
+            return "not_replaced"
+        with self.clipwatch.ours():
+            press_ctrl(self.kb, VK_Z)
+        deadline = time.monotonic() + 1.0
+        while self.uia.snapshot(element) != chain["before"]:
+            if time.monotonic() > deadline:
+                self._copy(text)
+                return "not_replaced"
+            time.sleep(0.05)
+        return self.insert(text, target)
+
     def _report(self, result, problem=""):
-        if result == "copied":
+        if result == "not_replaced":
+            self.toast("Couldn't swap in the longer version. It's on your clipboard: select the old text and press "
+                       "Ctrl+V.", "warn", 6)
+        elif result == "copied":
             self.toast("Copied - press Ctrl+V", "ok", 4)
         elif result == "unsure":
             self.toast("Couldn't confirm the paste. The text is on your clipboard.", "warn", 5)
@@ -1803,6 +2026,7 @@ class App:
     def insert(self, text, target):
         """Paste into the locked-in field. Returns "pasted", "typed", "copied", "unsure" or "interrupted"."""
         found = target.field
+        self.paste_before = None
         if found.kind == "none":
             self._copy(text)
             return "copied"
@@ -1816,7 +2040,7 @@ class App:
             return "copied"
         with self.clipwatch.ours():
             saved = save_clipboard()
-            before = self.uia.snapshot(found.element) if found.readable else None
+            before = self.paste_before = self.uia.snapshot(found.element) if found.readable else None
             set_clipboard_text(text)
             press_ctrl(self.kb, VK_V)
             landed = self._wait_for_change(found.element, before) if before is not None else None
@@ -1873,14 +2097,15 @@ class App:
         if not entry or client is None:
             self.toast("Nothing to redo yet" if not entry else "Redo needs a Groq API key", "info", 3)
             return
-        mode = self.mode_config(mode_key)
+        mode = mode_for(self.mode_config(mode_key), entry["transcript"])
         target = Target(0, entry["app"], entry["title"],
                         Field(kind="text", before=entry["field_before"], after=entry["field_after"]))
         self.toast(f"Rewriting as {mode['label'].lower()}…", "work", None)
         system, user = build_prompt(mode_key, mode, target, entry["transcript"], entry["selection"],
                                     entry["clipboard"], self.settings["dictionary"], self.settings["output_language"])
         try:
-            text, _ = rewrite(client, self.settings, system, user, mode.get("required", ""), self.usage)
+            text, _, _ = rewrite(client, self.settings, system, user, mode.get("required", ""), self.usage,
+                                 self._detail_check(mode, entry["transcript"], entry["clipboard"]))
             text = fill_placeholders(tidy_prompt(text) if mode_key == "prompt" else text, entry["snippets"])
         except groq.APIError as e:
             self.toast(f"Couldn't redo: {describe_error(e)}", "warn", 4)
